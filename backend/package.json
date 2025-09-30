@@ -1,12 +1,33 @@
 {
-  "name": "backend",
+  "name": "tasktracker-backend",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "build": "echo 'No build needed'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "pwa",
+    "tasks",
+    "api",
+    "offline",
+    "vercel"
+  ],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "Backend API para TaskTracker PWA - Optimizado para Vercel",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "sqlite3": "^5.1.6",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
