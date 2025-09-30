@@ -214,29 +214,35 @@ export const useTaskSync = () => {
 
   const updateTask = async (id, taskData) => {
     try {
-      // Get the current task to check if it has a serverId
-      const localTasks = await getTasksLocal();
-      const existingTask = localTasks.find(task => task.id === id);
+      logger.debug(`Updating task with ID: ${id} (type: ${typeof id})`);
       
-      await updateTaskLocal(id, {
-        ...taskData,
-        synced: false,
-        isNew: !existingTask?.serverCreated  // Si no se creó en el servidor, es nueva
-      });
-
+      // First check if it's a server task (can be updated directly)
       if (isOnline) {
-        const serverAvailable = await checkServerConnection();
-        if (serverAvailable && existingTask?.serverCreated) {
+        try {
+          await apiService.updateTask(id, taskData);
+          logger.debug(`Task ${id} updated successfully on server`);
+          
+          // Also update locally if the task exists there
           try {
-            // Use serverId if available, otherwise use local id
-            const serverTaskId = existingTask.serverId || id;
-            await apiService.updateTask(serverTaskId, taskData);
-
-            await updateTaskLocal(id, { synced: true });
-          } catch (error) {
-            logger.debug('Server update failed, keeping local changes:', error.message);
+            await updateTaskLocal(id, { ...taskData, synced: true });
+            logger.debug(`Task ${id} also updated locally`);
+          } catch (localError) {
+            // It's OK if it doesn't exist locally - server update was successful
+            logger.debug(`Task ${id} not found locally, but server update succeeded`);
           }
+          return;
+        } catch (serverError) {
+          logger.debug(`Server update failed for task ${id}, trying local only:`, serverError.message);
         }
+      }
+      
+      // Fallback: try to update only locally
+      try {
+        await updateTaskLocal(id, { ...taskData, synced: false });
+        logger.debug(`Task ${id} updated locally only`);
+      } catch (localError) {
+        logger.error(`Failed to update task ${id} both on server and locally:`, localError.message);
+        throw new Error(`Task ${id} not found anywhere`);
       }
     } catch (error) {
       console.error('Error updating task:', error);
