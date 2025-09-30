@@ -18,7 +18,7 @@ export const useTaskSync = () => {
     isLoading: isLocalLoading 
   } = useIndexedDB();
 
-  const checkServerConnection = async () => {
+  const checkServerConnection = useCallback(async () => {
     if (!isOnline) return false;
     
     try {
@@ -28,7 +28,7 @@ export const useTaskSync = () => {
       logger.debug('Server not available:', error.message);
       return false;
     }
-  };
+  }, [isOnline]);
 
   const syncWithServer = useCallback(async () => {
     if (isSyncing || !isOnline) return;
@@ -50,16 +50,47 @@ export const useTaskSync = () => {
       if (unsyncedTasks.length > 0) {
         logger.info(`Syncing ${unsyncedTasks.length} local tasks with server`);
         
-        const syncResult = await apiService.syncTasks(unsyncedTasks);
-        
-        if (syncResult.success) {
-          for (const task of unsyncedTasks) {
-            await updateTaskLocal(task.id, { synced: true });
+        // Sync each task individually using existing endpoints
+        for (const task of unsyncedTasks) {
+          try {
+            if (task.isNew) {
+              // Create new task on server
+              const serverTask = await apiService.createTask({
+                title: task.title,
+                description: task.description,
+                completed: task.completed,
+                priority: task.priority,
+                image: task.image || task.photo
+              });
+              
+              // Update local task with server ID and mark as synced
+              await updateTaskLocal(task.id, { 
+                serverCreated: true,
+                synced: true 
+              });
+            } else {
+              // Update existing task on server (if it has a server ID)
+              if (task.serverId) {
+                await apiService.updateTask(task.serverId, {
+                  title: task.title,
+                  description: task.description,
+                  completed: task.completed,
+                  priority: task.priority,
+                  image: task.image || task.photo
+                });
+              }
+              
+              // Mark as synced
+              await updateTaskLocal(task.id, { synced: true });
+            }
+          } catch (taskError) {
+            logger.error(`Failed to sync task ${task.id}:`, taskError);
+            // Continue with other tasks even if one fails
           }
-          
-          logger.info('Sync completed successfully');
-          setLastSyncTime(new Date());
         }
+        
+        logger.info('Sync completed');
+        setLastSyncTime(new Date());
       } else {
         const serverTasks = await apiService.getTasks();
         logger.debug(`Fetched ${serverTasks.length} tasks from server`);
@@ -72,7 +103,7 @@ export const useTaskSync = () => {
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, isOnline, getTasksLocal, updateTaskLocal]);
+  }, [isSyncing, isOnline, getTasksLocal, updateTaskLocal, checkServerConnection]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -109,7 +140,25 @@ export const useTaskSync = () => {
         if (serverAvailable) {
           try {
             const serverTasks = await apiService.getTasks();
-            return serverTasks.length > 0 ? serverTasks : localTasks;
+            logger.debug(`Fetched ${serverTasks.length} tasks from server, ${localTasks.length} tasks locally`);
+            
+            // Si el servidor tiene tareas, usar esas como fuente principal
+            if (serverTasks && serverTasks.length > 0) {
+              // Solo agregar tareas locales que definitivamente no están en el servidor
+              const pendingLocalTasks = localTasks.filter(localTask => {
+                // Solo incluir tareas locales que no se han sincronizado Y no tienen timestamp muy reciente
+                return !localTask.synced && 
+                       !localTask.serverCreated && 
+                       !serverTasks.some(serverTask => serverTask.title === localTask.title);
+              });
+              
+              logger.debug(`Adding ${pendingLocalTasks.length} pending local tasks to ${serverTasks.length} server tasks`);
+              return [...serverTasks, ...pendingLocalTasks];
+            } else {
+              // Si el servidor está vacío, usar tareas locales
+              logger.debug('Server empty, using local tasks');
+              return localTasks;
+            }
           } catch (error) {
             logger.debug('Server fetch failed, using local data:', error.message);
           }
@@ -127,7 +176,8 @@ export const useTaskSync = () => {
     try {
       const newTask = await addTaskLocal({
         ...taskData,
-        synced: false
+        synced: false,
+        isNew: true  // Marcar como nueva tarea para sync posterior
       });
 
       if (isOnline) {
@@ -135,11 +185,20 @@ export const useTaskSync = () => {
         if (serverAvailable) {
           try {
             const serverTask = await apiService.createTask(taskData);
-            await updateTaskLocal(newTask.id, {
+            logger.info('Task created successfully on server:', serverTask.id);
+            
+            // Eliminar la tarea local temporal y crear una nueva con datos del servidor
+            await deleteTaskLocal(newTask.id);
+            
+            // Agregar la tarea del servidor a la base de datos local
+            const finalTask = await addTaskLocal({
               ...serverTask,
-              synced: true
+              synced: true,
+              serverCreated: true,
+              isNew: false
             });
-            return { ...newTask, ...serverTask, synced: true };
+            
+            return finalTask;
           } catch (error) {
             logger.debug('Server add failed, keeping local:', error.message);
           }
@@ -155,16 +214,23 @@ export const useTaskSync = () => {
 
   const updateTask = async (id, taskData) => {
     try {
+      // Get the current task to check if it has a serverId
+      const localTasks = await getTasksLocal();
+      const existingTask = localTasks.find(task => task.id === id);
+      
       await updateTaskLocal(id, {
         ...taskData,
-        synced: false
+        synced: false,
+        isNew: !existingTask?.serverCreated  // Si no se creó en el servidor, es nueva
       });
 
       if (isOnline) {
         const serverAvailable = await checkServerConnection();
-        if (serverAvailable) {
+        if (serverAvailable && existingTask?.serverCreated) {
           try {
-            await apiService.updateTask(id, taskData);
+            // Use serverId if available, otherwise use local id
+            const serverTaskId = existingTask.serverId || id;
+            await apiService.updateTask(serverTaskId, taskData);
 
             await updateTaskLocal(id, { synced: true });
           } catch (error) {

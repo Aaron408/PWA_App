@@ -1,4 +1,3 @@
-// Utility to clear IndexedDB for development
 export const clearIndexedDB = () => {
   return new Promise((resolve, reject) => {
     const deleteRequest = indexedDB.deleteDatabase('TaskTrackerDB');

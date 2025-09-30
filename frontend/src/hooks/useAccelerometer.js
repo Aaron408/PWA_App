@@ -9,15 +9,13 @@ export const useAccelerometer = () => {
   
   const lastUpdate = useRef(Date.now());
   const lastAcceleration = useRef({ x: 0, y: 0, z: 0 });
-  const shakeThreshold = useRef(15); // Umbral para detectar movimiento brusco
+  const shakeThreshold = useRef(15);
 
   useEffect(() => {
-    // Verificar soporte para DeviceMotionEvent
     const checkSupport = () => {
       if (typeof DeviceMotionEvent !== 'undefined') {
         setIsSupported(true);
         
-        // En iOS 13+ se requiere permiso
         if (typeof DeviceMotionEvent.requestPermission === 'function') {
           setPermission('prompt');
         } else {
@@ -43,7 +41,6 @@ export const useAccelerometer = () => {
         setPermission(response);
         return response === 'granted';
       } else {
-        // Android o versiones más antiguas de iOS
         setPermission('granted');
         return true;
       }
@@ -58,7 +55,7 @@ export const useAccelerometer = () => {
     const currentTime = Date.now();
     
     if (currentTime - lastUpdate.current < 100) {
-      return; // Limitar la frecuencia de actualización
+      return;
     }
 
     const accel = event.accelerationIncludingGravity || event.acceleration || {};
@@ -68,7 +65,6 @@ export const useAccelerometer = () => {
 
     setAcceleration({ x, y, z });
 
-    // Detectar movimiento brusco (shake)
     const deltaX = Math.abs(x - lastAcceleration.current.x);
     const deltaY = Math.abs(y - lastAcceleration.current.y);
     const deltaZ = Math.abs(z - lastAcceleration.current.z);
@@ -78,12 +74,10 @@ export const useAccelerometer = () => {
     if (totalDelta > shakeThreshold.current) {
       setShakeDetected(true);
       
-      // Vibración cuando se detecta movimiento brusco
       if ('vibrate' in navigator) {
         navigator.vibrate(200);
       }
 
-      // Resetear después de 1 segundo
       setTimeout(() => setShakeDetected(false), 1000);
     }
 
@@ -118,7 +112,6 @@ export const useAccelerometer = () => {
     shakeThreshold.current = threshold;
   }, []);
 
-  // Detectar orientación del dispositivo
   const getOrientation = () => {
     const { x, y, z } = acceleration;
     
@@ -131,14 +124,12 @@ export const useAccelerometer = () => {
     }
   };
 
-  // Calcular la intensidad del movimiento
   const getMovementIntensity = () => {
     const { x, y, z } = acceleration;
     return Math.sqrt(x * x + y * y + z * z);
   };
 
   useEffect(() => {
-    // Cleanup al desmontar
     return () => {
       if (isListening) {
         stopListening();

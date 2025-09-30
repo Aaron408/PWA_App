@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "name": "pwa-task-tracker-frontend",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
@@ -39,7 +38,7 @@
       ]
     },
     {
-      "source": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot))",
+      "source": "/(.*)\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -48,9 +47,6 @@
       ]
     }
   ],
-  "env": {
-    "VITE_API_URL": "@vite_api_url"
-  },
   "build": {
     "env": {
       "VITE_API_URL": "https://pwa-task-tracker-backend.vercel.app/api"

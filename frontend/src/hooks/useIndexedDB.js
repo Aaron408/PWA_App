@@ -24,12 +24,10 @@ export const useIndexedDB = () => {
           logger.info('Upgrading IndexedDB schema...');
           const database = event.target.result;
           
-          // Delete existing object store if it exists
           if (database.objectStoreNames.contains('tasks')) {
             database.deleteObjectStore('tasks');
           }
           
-          // Create new object store
           const store = database.createObjectStore('tasks', { keyPath: 'id' });
           store.createIndex('completed', 'completed', { unique: false });
           store.createIndex('createdAt', 'createdAt', { unique: false });
@@ -59,7 +57,6 @@ export const useIndexedDB = () => {
       throw new Error('Database not initialized');
     }
 
-    // Verificar que el object store existe
     if (!db.objectStoreNames.contains('tasks')) {
       throw new Error('Tasks object store not found');
     }
@@ -115,21 +112,17 @@ export const useIndexedDB = () => {
           const tasks = request.result || [];
           logger.debug('Retrieved tasks from IndexedDB:', tasks.length);
           
-          // Limpiar y validar datos de tareas
           const validTasks = tasks.map(task => {
             const validatedTask = { ...task };
             
-            // Validar createdAt
             if (!validatedTask.createdAt || isNaN(new Date(validatedTask.createdAt).getTime())) {
               validatedTask.createdAt = new Date().toISOString();
             }
             
-            // Validar updatedAt
             if (!validatedTask.updatedAt || isNaN(new Date(validatedTask.updatedAt).getTime())) {
               validatedTask.updatedAt = validatedTask.createdAt;
             }
             
-            // Asegurar que tiene todos los campos necesarios
             if (!validatedTask.id) {
               validatedTask.id = Date.now().toString();
             }
@@ -252,7 +245,6 @@ export const useIndexedDB = () => {
         db.close();
       }
       
-      // Eliminar la base de datos actual
       await new Promise((resolve, reject) => {
         const deleteRequest = indexedDB.deleteDatabase('TaskTrackerDB');
         deleteRequest.onsuccess = () => resolve();
@@ -262,7 +254,6 @@ export const useIndexedDB = () => {
       setDb(null);
       setIsLoading(true);
       
-      // Reinicializar
       const database = await new Promise((resolve, reject) => {
         const request = indexedDB.open('TaskTrackerDB', 1);
         

@@ -7,6 +7,7 @@ import StatsCard from './components/StatsCard';
 import { useTaskSync } from './hooks/useTaskSync';
 import { useNotifications } from './hooks/useNotifications';
 import { useAccelerometer } from './hooks/useAccelerometer';
+import { logger } from './utils/logger';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -15,6 +16,8 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(undefined);
   const [filter, setFilter] = useState('all');
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { 
     getTasks, 
@@ -46,68 +49,172 @@ function App() {
     requestPermission: requestAccelPermission
   } = useAccelerometer();
 
+  // Registrar Service Worker solo una vez al montar el componente
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then((registration) => {
-          console.log('SW registered: ', registration);
+          logger.info('Service Worker registered successfully');
         })
         .catch((registrationError) => {
-          console.log('SW registration failed: ', registrationError);
+          logger.error('Service Worker registration failed:', registrationError);
         });
     }
+  }, []); // Array de dependencias vacío para ejecutar solo una vez
 
+  // Timeout fallback para splash screen
+  useEffect(() => {
+    const splashTimeout = setTimeout(() => {
+      if (showSplash) {
+        logger.warn('Splash screen timeout reached, hiding splash');
+        setShowSplash(false);
+      }
+    }, 5000); // 5 segundos máximo
+
+    return () => clearTimeout(splashTimeout);
+  }, [showSplash]);
+
+  // Solicitar permisos de notificación por separado
+  useEffect(() => {
     requestPermission();
   }, [requestPermission]);
 
+  // Inicialización única de la aplicación
   useEffect(() => {
-    if (!isLoading) {
-      loadData();
+    if (!isLoading && !isInitialized) {
+      setIsInitialized(true);
+      
+      const initAndLoad = async () => {
+        try {
+          logger.info('Initializing application...');
+          await initializeApp();
+          await loadData();
+          // Ocultar splash screen después de cargar datos exitosamente
+          setTimeout(() => setShowSplash(false), 1000);
+        } catch (error) {
+          logger.error('Failed to initialize app:', error);
+          // Ocultar splash incluso si falla la carga
+          setTimeout(() => setShowSplash(false), 2000);
+        }
+      };
+      
+      initAndLoad();
     }
-  }, [isLoading]);
+  }, [isLoading, isInitialized]);
 
+  // Configuración del acelerómetro - solo cuando la app esté lista
   useEffect(() => {
-    if (accelSupported && !showSplash) {
+    if (accelSupported && !showSplash && isInitialized) {
       requestAccelPermission().then(granted => {
         if (granted) {
           startAccel();
         }
       });
+      
+      return () => {
+        stopAccel();
+      };
     }
+  }, [accelSupported, showSplash, isInitialized]);
 
-    return () => {
-      stopAccel();
-    };
-  }, [accelSupported, showSplash, requestAccelPermission, startAccel, stopAccel]);
+  // Actualizar estadísticas cuando cambien las tareas
+  useEffect(() => {
+    if (tasks.length >= 0) { // Solo si tenemos datos válidos
+      updateStatsFromTasks(tasks);
+    }
+  }, [tasks.length]); // Solo recalcular si cambia la cantidad de tareas
 
   useEffect(() => {
-    if (shakeDetected && !showSplash) {
+    if (shakeDetected && !showSplash && isOnline && !isSyncing) {
       showTaskNotification('📊 Estadísticas actualizadas', 'info');
       
-      if (isOnline) {
-        syncWithServer();
-      }
+      // Usar la función de sincronización manual que ya tiene debounce
+      handleManualSync();
     }
-  }, [shakeDetected, showSplash, showTaskNotification, isOnline, syncWithServer]);
+  }, [shakeDetected, showSplash, showTaskNotification, isOnline, isSyncing]);
+
+  // Función para limpiar datos inconsistentes al iniciar
+  const initializeApp = async () => {
+    const lastCleanup = localStorage.getItem('lastCleanup');
+    const now = Date.now();
+    
+    // Limpiar cada 24 horas o en primera carga
+    if (!lastCleanup || (now - parseInt(lastCleanup)) > 24 * 60 * 60 * 1000) {
+      logger.info('Performing database cleanup');
+      await clearAndReinitDB();
+      localStorage.setItem('lastCleanup', now.toString());
+    }
+  };
 
   const loadData = async () => {
+    // Evitar llamadas concurrentes
+    if (isLoadingData) {
+      logger.debug('LoadData already in progress, skipping');
+      return;
+    }
+    
+    setIsLoadingData(true);
     try {
+      logger.debug('Starting loadData');
       const [taskList, statsData] = await Promise.all([
         getTasks(),
         getStats()
       ]);
       setTasks(taskList);
       setStats(statsData);
+      logger.debug(`LoadData complete: ${taskList.length} tasks loaded`);
     } catch (error) {
       console.error('Error loading data:', error);
+    } finally {
+      setIsLoadingData(false);
     }
+  };
+
+  const updateStatsFromTasks = (taskList) => {
+    const total = taskList.length;
+    const completed = taskList.filter(t => t.completed).length;
+    const highPriority = taskList.filter(t => t.priority === 'high' && !t.completed).length;
+    
+    setStats({
+      total,
+      completed,
+      pending: total - completed,
+      highPriority
+    });
+  };
+
+  const handleManualSync = () => {
+    const lastSync = localStorage.getItem('lastManualSync');
+    const now = Date.now();
+    
+    if (isSyncing) {
+      logger.debug('Sync already in progress');
+      return;
+    }
+    
+    if (lastSync && (now - parseInt(lastSync)) < 3000) {
+      logger.debug('Manual sync too frequent, ignoring');
+      showTaskNotification('Sincronización muy frecuente', 'info');
+      return;
+    }
+    
+    syncWithServer();
+    localStorage.setItem('lastManualSync', now.toString());
   };
 
   const handleAddTask = async (taskData) => {
     try {
       const newTask = await addTask(taskData);
       
-      await loadData();
+      if (!newTask.serverCreated) {
+        await loadData();
+      } else {
+        setTasks(prevTasks => {
+          const updatedTasks = [...prevTasks, newTask];
+          updateStatsFromTasks(updatedTasks);
+          return updatedTasks;
+        });
+      }
       
       showTaskNotification(taskData.title, 'created');
       
@@ -115,7 +222,6 @@ function App() {
         scheduleTaskReminder(taskData.title, 60); //1 hour reminder
       }
 
-      //Vibration feedback
       if ('vibrate' in navigator) {
         navigator.vibrate(200);
       }
@@ -141,7 +247,14 @@ function App() {
     try {
       await updateTask(editingTask.id, taskData);
       
-      await loadData();
+      // Actualizar directamente el estado en lugar de recargar todo
+      setTasks(prevTasks => {
+        const updatedTasks = prevTasks.map(task => 
+          task.id === editingTask.id ? { ...task, ...taskData } : task
+        );
+        updateStatsFromTasks(updatedTasks);
+        return updatedTasks;
+      });
       
       showTaskNotification(taskData.title, 'info');
     } catch (error) {
@@ -158,7 +271,14 @@ function App() {
       const newCompletedStatus = !task.completed;
       await updateTask(id, { completed: newCompletedStatus });
       
-      await loadData();
+      // Actualizar directamente el estado
+      setTasks(prevTasks => {
+        const updatedTasks = prevTasks.map(t => 
+          t.id === id ? { ...t, completed: newCompletedStatus } : t
+        );
+        updateStatsFromTasks(updatedTasks);
+        return updatedTasks;
+      });
 
       if (newCompletedStatus) {
         showTaskNotification(task.title, 'success');
@@ -177,7 +297,12 @@ function App() {
     try {
       await deleteTask(id);
       
-      await loadData();
+      // Actualizar directamente el estado
+      setTasks(prevTasks => {
+        const updatedTasks = prevTasks.filter(t => t.id !== id);
+        updateStatsFromTasks(updatedTasks);
+        return updatedTasks;
+      });
       
       showTaskNotification('Tarea eliminada correctamente', 'info');
     } catch (error) {
@@ -243,7 +368,7 @@ function App() {
             <div className="flex items-center space-x-2">
               {isOnline && (
                 <button
-                  onClick={syncWithServer}
+                  onClick={handleManualSync}
                   disabled={isSyncing}
                   className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                   title="Sincronizar con servidor"

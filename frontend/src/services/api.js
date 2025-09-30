@@ -1,13 +1,12 @@
-// API service for TaskTracker
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = "https://pwa-task-tracker-backend.vercel.app/api";
 
 class ApiService {
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
-    
+
     const config = {
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...options.headers,
       },
       ...options,
@@ -15,26 +14,26 @@ class ApiService {
 
     try {
       const response = await fetch(url, config);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       return await response.json();
     } catch (error) {
-      console.error('API request failed:', error);
+      console.error("API request failed:", error);
       throw error;
     }
   }
 
   // Health check
   async healthCheck() {
-    return this.request('/health');
+    return this.request("/health");
   }
 
   // Tasks endpoints
   async getTasks() {
-    return this.request('/tasks');
+    return this.request("/tasks");
   }
 
   async getTask(id) {
@@ -42,40 +41,33 @@ class ApiService {
   }
 
   async createTask(taskData) {
-    return this.request('/tasks', {
-      method: 'POST',
+    return this.request("/tasks", {
+      method: "POST",
       body: JSON.stringify(taskData),
     });
   }
 
   async updateTask(id, taskData) {
     return this.request(`/tasks/${id}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(taskData),
     });
   }
 
   async deleteTask(id) {
     return this.request(`/tasks/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async syncTasks(tasks) {
-    return this.request('/tasks/sync', {
-      method: 'POST',
-      body: JSON.stringify({ tasks }),
+      method: "DELETE",
     });
   }
 
   async getStats() {
-    return this.request('/stats');
+    return this.request("/stats");
   }
 
   // Seed data for testing
   async seedData() {
-    return this.request('/seed', {
-      method: 'POST',
+    return this.request("/seed", {
+      method: "POST",
     });
   }
 }

@@ -14,7 +14,7 @@ export const useNotifications = () => {
     }
   }, []);
 
-  const requestPermission = async () => {
+  const requestPermission = useCallback(async () => {
     if (!isSupported) return false;
 
     try {
@@ -25,7 +25,7 @@ export const useNotifications = () => {
       console.error('Error requesting notification permission:', error);
       return false;
     }
-  };
+  }, [isSupported]);
 
   const showNotification = useCallback((title, options = {}) => {
     if (permission === 'granted' && isSupported) {
@@ -39,12 +39,10 @@ export const useNotifications = () => {
         ...options
       });
 
-      // Vibration feedback if supported
       if ('vibrate' in navigator && !options.silent) {
         navigator.vibrate([200, 100, 200]);
       }
 
-      // Auto-close notification after 5 seconds unless specified otherwise
       if (!options.requireInteraction) {
         setTimeout(() => {
           if (notification) {
@@ -105,14 +103,13 @@ export const useNotifications = () => {
   }, [showNotification]);
 
   const scheduleTaskReminder = useCallback((taskTitle, delayMinutes) => {
-    const delay = delayMinutes * 60 * 1000; // Convertir a milisegundos
+    const delay = delayMinutes * 60 * 1000;
     
     setTimeout(() => {
       showTaskNotification(taskTitle, 'reminder');
     }, delay);
   }, [showTaskNotification]);
 
-  // Notificaciones push usando Service Worker
   const sendPushNotification = useCallback(async (title, body, data = {}) => {
     if (!registrationSupported || permission !== 'granted') {
       return false;
@@ -140,7 +137,6 @@ export const useNotifications = () => {
           ]
         });
 
-        // Vibración para notificaciones push
         if ('vibrate' in navigator) {
           navigator.vibrate([300, 200, 300]);
         }
@@ -149,7 +145,6 @@ export const useNotifications = () => {
       }
     } catch (error) {
       console.error('Error sending push notification:', error);
-      // Fallback a notificación normal
       return showNotification(title, { body, data });
     }
 

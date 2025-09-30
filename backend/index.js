@@ -169,15 +169,18 @@ app.get("/api/stats", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 TaskTracker API running on port ${PORT}`);
-  console.log("Available endpoints:");
-  console.log("- GET /api/health");
-  console.log("- GET /api/tasks");
-  console.log("- POST /api/tasks");
-  console.log("- PUT /api/tasks/:id");
-  console.log("- DELETE /api/tasks/:id");
-  console.log("- GET /api/stats");
-});
+// Solo iniciar el servidor si este archivo se ejecuta directamente
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 TaskTracker API running on port ${PORT}`);
+    console.log("Available endpoints:");
+    console.log("- GET /api/health");
+    console.log("- GET /api/tasks");
+    console.log("- POST /api/tasks");
+    console.log("- PUT /api/tasks/:id");
+    console.log("- DELETE /api/tasks/:id");
+    console.log("- GET /api/stats");
+  });
+}
 
 module.exports = app;
